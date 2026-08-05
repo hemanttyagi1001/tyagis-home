@@ -86,11 +86,11 @@ npx eas-cli build --platform android --profile production
 
 ## CI/CD
 
-Pushes and pull requests are built automatically on EAS:
+Day-to-day testing is local, against Expo Go. CI handles releases:
 
 | Event | Result |
 |---|---|
-| Pull request | Preview APK |
+| Pull request | Verify only — install, config check, Android bundle |
 | Merge to `main` | Production AAB, submitted to the Play Store internal track as a draft |
 | Manual dispatch | Choose the profile, and whether to submit |
 

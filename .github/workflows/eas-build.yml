@@ -1,8 +1,12 @@
-name: EAS Build & Submit
+name: Verify & Release
 
-# Push to main  -> production AAB, auto-submitted to the Play Store internal track.
-# Pull request  -> preview APK only, so changes are testable before they merge.
-# Manual        -> pick the profile, and whether to submit.
+# Local development uses `npx expo start` with Expo Go, so pull requests do not
+# build on EAS - they only verify that the code installs, configures and
+# bundles. Merging to main is what produces a release.
+#
+#   pull request  -> verify only (~2 min, no EAS queue)
+#   merge to main -> production AAB -> Play Store internal track (draft)
+#   manual        -> choose a profile, and whether to submit
 on:
   push:
     branches: [main]
@@ -32,15 +36,12 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   EXPO_NO_TELEMETRY: 1
 
-# A newer push to the same branch cancels the older run rather than paying for
-# a build that is already obsolete. Never cancel a run on main mid-submit.
 concurrency:
-  group: eas-${{ github.ref }}
+  group: release-${{ github.ref }}
+  # Never cancel a run on main mid-submit; superseding a PR check is fine.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Cheap gate: if the app does not install, lint, or bundle, do not spend an
-  # EAS build slot on it.
   verify:
     name: Verify
     runs-on: ubuntu-latest
@@ -59,20 +60,20 @@ jobs:
         run: npx expo config --type public --json > /dev/null
 
       - name: Bundle for Android
-        # Exercises every source file through Metro. Catches syntax errors,
-        # bad imports and missing assets before the build is queued.
+        # Exercises every source file through Metro, so a syntax error or bad
+        # import fails here rather than in a release build.
         run: |
           npx expo export --platform android --output-dir /tmp/expo-export
           echo "Bundle produced:"
           du -sh /tmp/expo-export
 
-  build:
-    name: Build${{ github.event_name == 'push' && ' & Submit' || '' }}
+  release:
+    name: Build & Submit
     needs: verify
     runs-on: ubuntu-latest
-    # Skip on PRs from forks: they cannot read secrets, so the build would fail
-    # on a missing EXPO_TOKEN rather than on anything the contributor did.
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Only merges into main, or an explicit manual run. Pull requests stop at
+    # verify so local Expo Go testing is the fast path.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v5
 
@@ -95,24 +96,23 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "name=${{ inputs.profile }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            echo "name=production" >> "$GITHUB_OUTPUT"
           else
-            echo "name=preview" >> "$GITHUB_OUTPUT"
+            echo "name=production" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build on EAS
+        # --wait so submission runs against a finished artifact rather than
+        # racing a build that is still queued.
         run: |
           eas build \
             --platform android \
             --profile ${{ steps.profile.outputs.name }} \
             --non-interactive \
-            --no-wait
+            --wait
 
       # --- Play Store submission -------------------------------------------
-      # Only from main, only for production builds. The service account key is
-      # written from a secret at runtime and removed immediately afterwards; it
-      # is gitignored and never committed.
+      # The service account key is written from a secret at runtime and removed
+      # immediately afterwards. It is gitignored and never committed.
       - name: Write Play Store service account key
         if: |
           steps.profile.outputs.name == 'production' &&
@@ -120,7 +120,6 @@ jobs:
         run: |
           if [ -z "${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}" ]; then
             echo "::error::GOOGLE_SERVICE_ACCOUNT_KEY secret is not set."
-            echo "Add it under Settings > Secrets and variables > Actions."
             exit 1
           fi
           printf '%s' '${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}' > google-service-account.json
@@ -139,7 +138,7 @@ jobs:
             --non-interactive
 
       - name: Remove service account key
-        # Runs even if submission failed, so the key never lingers on the runner.
+        # always() so the key never survives a failed submission.
         if: always()
         run: rm -f google-service-account.json
 
@@ -147,7 +146,9 @@ jobs:
         if: always()
         run: |
           {
-            echo "### EAS ${{ steps.profile.outputs.name }} build"
+            echo "### ${{ steps.profile.outputs.name }} build"
             echo ""
-            echo "Track builds at https://expo.dev/accounts/hemanttyagi1001/projects/tyagis-home/builds"
+            echo "Submitted as a **draft** on the internal track - roll it out from the Play Console."
+            echo ""
+            echo "Builds: https://expo.dev/accounts/hemanttyagi1001/projects/tyagis-home/builds"
           } >> "$GITHUB_STEP_SUMMARY"

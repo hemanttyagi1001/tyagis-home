@@ -4,14 +4,38 @@ The pipeline in `.github/workflows/eas-build.yml` connects GitHub to EAS and,
 from there, to the Play Store.
 
 ```
-PR opened      ->  verify (install, config, bundle)  ->  preview APK
-merge to main  ->  verify                            ->  production AAB  ->  Play Store (internal, draft)
+local dev      ->  npx expo start  ->  Expo Go on your phone
+PR opened      ->  verify (install, config, bundle)   ~2 min, no EAS build
+merge to main  ->  verify  ->  production AAB  ->  Play Store (internal, draft)
 manual run     ->  choose profile, choose whether to submit
 ```
 
-Builds run on EAS servers; the GitHub runner only orchestrates. `verify` runs
-first so a syntax error or bad import fails in ~2 minutes instead of consuming
-an EAS build slot.
+Day-to-day testing happens locally against Expo Go, so pull requests do not
+spend an EAS build slot — they only prove the code installs, configures and
+bundles. Merging to `main` is what produces a release.
+
+Builds run on EAS servers; the GitHub runner only orchestrates.
+
+## Local development
+
+```bash
+npm install
+npx expo start
+```
+
+Scan the QR with Expo Go, or enter `exp://<your-lan-ip>:8081` manually. Add
+`--tunnel` if the phone and computer are not on the same network.
+
+Note that Expo Go runs your JS inside its own container, so app lifecycle
+behaviour (backgrounding, process death) is not identical to a standalone
+build. For anything lifecycle-sensitive, build a development client once:
+
+```bash
+npx eas-cli build --platform android --profile development
+```
+
+That app also hot-reloads from `npx expo start --dev-client`, but with real
+standalone lifecycle.
 
 ## Required secrets
 
@@ -75,6 +99,6 @@ to `completed` if you would rather releases go live automatically.
 
 Trigger a manual run without touching the code:
 
-**Actions → EAS Build & Submit → Run workflow** → profile `preview`, submit off.
+**Actions → Verify & Release → Run workflow** → profile `preview`, submit off.
 
 That produces an installable APK and exercises everything except submission.

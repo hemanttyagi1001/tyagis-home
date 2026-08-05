@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Tyagi's Home",
+    "slug": "tyagis-home",
+    "owner": "hemanttyagi1001",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4A6741"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tyagishome.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4A6741"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.tyagishome.app",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-background-fetch",
+      "expo-task-manager",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "cbd2dc2e-16c7-4bd2-bc18-3d7ad76067d0"
+      }
+    }
+  }
+}

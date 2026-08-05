@@ -83,3 +83,17 @@ npx eas-cli build --platform android --profile preview
 # AAB for Play Store submission
 npx eas-cli build --platform android --profile production
 ```
+
+## CI/CD
+
+Day-to-day testing is local, against Expo Go. CI handles releases:
+
+| Event | Result |
+|---|---|
+| Pull request | Verify only — install, config check, Android bundle |
+| Merge to `main` | Production AAB, submitted to the Play Store internal track as a draft |
+| Manual dispatch | Choose the profile, and whether to submit |
+
+Setup (the `EXPO_TOKEN` and `GOOGLE_SERVICE_ACCOUNT_KEY` secrets, and the
+one-time manual first upload Google requires) is documented in
+[docs/ci-setup.md](docs/ci-setup.md).

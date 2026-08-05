@@ -1,0 +1,153 @@
+name: EAS Build & Submit
+
+# Push to main  -> production AAB, auto-submitted to the Play Store internal track.
+# Pull request  -> preview APK only, so changes are testable before they merge.
+# Manual        -> pick the profile, and whether to submit.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/CODEOWNERS'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/CODEOWNERS'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile'
+        type: choice
+        options: [preview, production]
+        default: preview
+      submit:
+        description: 'Submit to Play Store after building (production only)'
+        type: boolean
+        default: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  EXPO_NO_TELEMETRY: 1
+
+# A newer push to the same branch cancels the older run rather than paying for
+# a build that is already obsolete. Never cancel a run on main mid-submit.
+concurrency:
+  group: eas-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Cheap gate: if the app does not install, lint, or bundle, do not spend an
+  # EAS build slot on it.
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Expo config
+        run: npx expo config --type public --json > /dev/null
+
+      - name: Bundle for Android
+        # Exercises every source file through Metro. Catches syntax errors,
+        # bad imports and missing assets before the build is queued.
+        run: |
+          npx expo export --platform android --output-dir /tmp/expo-export
+          echo "Bundle produced:"
+          du -sh /tmp/expo-export
+
+  build:
+    name: Build${{ github.event_name == 'push' && ' & Submit' || '' }}
+    needs: verify
+    runs-on: ubuntu-latest
+    # Skip on PRs from forks: they cannot read secrets, so the build would fail
+    # on a missing EXPO_TOKEN rather than on anything the contributor did.
+    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve build profile
+        id: profile
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.profile }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "name=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=preview" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build on EAS
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ steps.profile.outputs.name }} \
+            --non-interactive \
+            --no-wait
+
+      # --- Play Store submission -------------------------------------------
+      # Only from main, only for production builds. The service account key is
+      # written from a secret at runtime and removed immediately afterwards; it
+      # is gitignored and never committed.
+      - name: Write Play Store service account key
+        if: |
+          steps.profile.outputs.name == 'production' &&
+          (github.event_name == 'push' || inputs.submit)
+        run: |
+          if [ -z "${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}" ]; then
+            echo "::error::GOOGLE_SERVICE_ACCOUNT_KEY secret is not set."
+            echo "Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          printf '%s' '${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}' > google-service-account.json
+          node -e "JSON.parse(require('fs').readFileSync('google-service-account.json','utf8'))" \
+            || { echo "::error::Service account key is not valid JSON."; exit 1; }
+
+      - name: Submit to Play Store (internal track)
+        if: |
+          steps.profile.outputs.name == 'production' &&
+          (github.event_name == 'push' || inputs.submit)
+        run: |
+          eas submit \
+            --platform android \
+            --profile production \
+            --latest \
+            --non-interactive
+
+      - name: Remove service account key
+        # Runs even if submission failed, so the key never lingers on the runner.
+        if: always()
+        run: rm -f google-service-account.json
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### EAS ${{ steps.profile.outputs.name }} build"
+            echo ""
+            echo "Track builds at https://expo.dev/accounts/hemanttyagi1001/projects/tyagis-home/builds"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -18,6 +18,12 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Google Play service account key - NEVER commit this.
+# In CI it is written at runtime from the GOOGLE_SERVICE_ACCOUNT_KEY secret.
+google-service-account.json
+*-service-account*.json
+play-store-key*.json
+
 # Metro
 .metro-health-check*
 

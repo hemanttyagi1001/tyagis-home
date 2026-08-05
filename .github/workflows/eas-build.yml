@@ -111,10 +111,26 @@ jobs:
             --wait
 
       # --- Play Store submission -------------------------------------------
+      # Gated on the PLAY_SUBMIT_ENABLED repository variable. Google's API
+      # cannot create a release for an app that has never had a manual upload,
+      # so submission stays off until the first AAB has been uploaded by hand.
+      # Turn it on with:
+      #   gh variable set PLAY_SUBMIT_ENABLED --body true
+      - name: Check submission gate
+        id: gate
+        run: |
+          if [ "${{ vars.PLAY_SUBMIT_ENABLED }}" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Play Store submission is disabled. Download the AAB from EAS and upload it manually, then set the PLAY_SUBMIT_ENABLED variable to true."
+          fi
+
       # The service account key is written from a secret at runtime and removed
       # immediately afterwards. It is gitignored and never committed.
       - name: Write Play Store service account key
         if: |
+          steps.gate.outputs.enabled == 'true' &&
           steps.profile.outputs.name == 'production' &&
           (github.event_name == 'push' || inputs.submit)
         run: |
@@ -128,6 +144,7 @@ jobs:
 
       - name: Submit to Play Store (internal track)
         if: |
+          steps.gate.outputs.enabled == 'true' &&
           steps.profile.outputs.name == 'production' &&
           (github.event_name == 'push' || inputs.submit)
         run: |
@@ -148,7 +165,17 @@ jobs:
           {
             echo "### ${{ steps.profile.outputs.name }} build"
             echo ""
-            echo "Submitted as a **draft** on the internal track - roll it out from the Play Console."
-            echo ""
             echo "Builds: https://expo.dev/accounts/hemanttyagi1001/projects/tyagis-home/builds"
+            echo ""
+            if [ "${{ steps.gate.outputs.enabled }}" = "true" ]; then
+              echo "Submitted as a **draft** on the internal track - roll it out from the Play Console."
+            else
+              echo "**Play Store submission is off.** Google rejects API submissions until an app"
+              echo "has had one manual upload, so:"
+              echo ""
+              echo "1. Download the AAB from the build page above."
+              echo "2. Play Console -> Testing -> Internal testing -> upload it."
+              echo "3. Enable automatic submission from then on:"
+              echo '   `gh variable set PLAY_SUBMIT_ENABLED --body true`'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

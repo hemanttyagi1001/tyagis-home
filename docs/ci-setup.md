@@ -69,16 +69,23 @@ it immediately afterwards. That filename is gitignored — never commit it.
 
 ## First release must be manual
 
-Google's API cannot create a release for an app with no prior upload. Before the
-automated submit will work:
+Google's API cannot create a release for an app with no prior upload, so
+automatic submission is gated behind a repository variable and starts **off**.
 
-```bash
-npx eas-cli build --platform android --profile production
-```
+1. Merge to `main` (or run the workflow manually with the `production` profile).
+   The AAB builds on EAS; submission is skipped.
+2. Download the `.aab` from the build page.
+3. Play Console → **Testing → Internal testing** → upload it once by hand.
+4. Turn on automatic submission:
 
-Download the resulting `.aab` and upload it once by hand in the Play Console
-under **Testing → Internal testing**. Every later push to `main` submits
-automatically.
+   ```bash
+   gh variable set PLAY_SUBMIT_ENABLED --body true
+   ```
+
+Every later merge to `main` then builds and submits without intervention.
+
+To pause automatic submission at any point, set the variable to `false` — the
+build still runs, only the submit step is skipped.
 
 ## Version handling
 

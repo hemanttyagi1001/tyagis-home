@@ -19,8 +19,7 @@ function isConnectionError(error) {
     message.includes('null pointer') ||
     message.includes('nullpointerexception') ||
     message.includes('prepared statement') ||
-    message.includes('has been finalized') ||
-    message.includes('no such table')
+    message.includes('has been finalized')
   );
 }
 
@@ -63,20 +62,39 @@ export async function resetDatabase() {
   }
 }
 
-// Runs a database operation, and if it fails because the connection went stale,
-// reopens once and retries. This is what stops a single backgrounding from
-// leaving the app permanently blank until it is swiped out of recents.
-async function withDatabase(operation) {
-  let database = await getDatabase();
-  try {
-    return await operation(database);
-  } catch (error) {
-    if (!isConnectionError(error)) throw error;
+// Runs a database operation, reopening and retrying if the connection turns out
+// to be stale. Retries a few times with a short backoff rather than once: the
+// handle can be closed and reopened by another caller (the background task
+// finishing, or a reconnect) while this query is in flight, and a single retry
+// can land inside that same window and fail again.
+//
+// On failure it only drops the cached handle - it does not close the connection,
+// because another in-flight query may still be using it. Closing here is what
+// turned a recoverable blip into a visible error.
+const MAX_ATTEMPTS = 4;
 
-    await resetDatabase();
-    database = await getDatabase();
-    return await operation(database);
+async function withDatabase(operation) {
+  let lastError;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const database = await getDatabase();
+      return await operation(database);
+    } catch (error) {
+      lastError = error;
+      if (!isConnectionError(error)) throw error;
+
+      // Drop the stale handle so the next getDatabase() opens a fresh one.
+      db = null;
+      openPromise = null;
+
+      if (attempt < MAX_ATTEMPTS - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 60 * (attempt + 1)));
+      }
+    }
   }
+
+  throw lastError;
 }
 
 async function initializeDatabase(database) {

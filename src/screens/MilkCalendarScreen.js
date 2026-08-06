@@ -11,7 +11,7 @@ import {
 import {
   getCurrentMonth, getPreviousMonth, getNextMonth, getMonthName, isCurrentOrLastMonth
 } from '../utils/dateUtils';
-import { captureAndShare } from '../utils/shareUtils';
+import { captureAndShare, captureAndSaveToGallery } from '../utils/shareUtils';
 
 export default function MilkCalendarScreen() {
   const current = getCurrentMonth();
@@ -170,6 +170,12 @@ export default function MilkCalendarScreen() {
     }
   }
 
+  async function handleSave() {
+    if (calendarRef.current) {
+      await captureAndSaveToGallery(calendarRef, `milk_${getMonthName(month)}_${year}`);
+    }
+  }
+
   const editable = isCurrentOrLastMonth(year, month);
 
   return (
@@ -179,10 +185,16 @@ export default function MilkCalendarScreen() {
           <Ionicons name="settings-outline" size={22} color={COLORS.primary} />
           <Text style={styles.iconBtnText}>Defaults</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleShare} style={styles.iconBtn}>
-          <Ionicons name="share-outline" size={22} color={COLORS.primary} />
-          <Text style={styles.iconBtnText}>Share</Text>
-        </TouchableOpacity>
+        <View style={styles.topBarRight}>
+          <TouchableOpacity onPress={handleSave} style={styles.iconBtn}>
+            <Ionicons name="download-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.iconBtnText}>Save</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleShare} style={styles.iconBtn}>
+            <Ionicons name="share-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.iconBtnText}>Share</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loadError && (
@@ -344,6 +356,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     backgroundColor: COLORS.surface,
   },
+  topBarRight: { flexDirection: 'row', alignItems: 'center' },
   iconBtn: { flexDirection: 'row', alignItems: 'center', padding: 8, gap: 4 },
   iconBtnText: { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
   errorBanner: {

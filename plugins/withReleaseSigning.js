@@ -41,17 +41,20 @@ module.exports = function withReleaseSigning(config) {
     }
     gradle = gradle.replace(debugBlockEnd, `$1${RELEASE_SIGNING_CONFIG}`);
 
-    // Point the release build type at it instead of the debug key.
-    if (!gradle.includes('signingConfig signingConfigs.debug')) {
+    // Point the release build type at it instead of the debug key. Anchor on
+    // the buildTypes release block specifically: a looser pattern matches the
+    // `debug { signingConfig signingConfigs.debug }` block that appears first
+    // and silently swaps the two around.
+    const releaseBuildType =
+      /(buildTypes \{[\s\S]*?\n        release \{\n(?:\s*\/\/[^\n]*\n)*\s*)signingConfig signingConfigs\.debug/;
+
+    if (!releaseBuildType.test(gradle)) {
       throw new Error(
-        'withReleaseSigning: release build type did not reference the debug ' +
-          'signingConfig as expected - update this plugin.'
+        'withReleaseSigning: could not find the release build type using the ' +
+          'debug signingConfig - the prebuild template probably changed.'
       );
     }
-    gradle = gradle.replace(
-      /(release \{[\s\S]*?)signingConfig signingConfigs\.debug/,
-      '$1signingConfig signingConfigs.release'
-    );
+    gradle = gradle.replace(releaseBuildType, '$1signingConfig signingConfigs.release');
 
     cfg.modResults.contents = gradle;
     return cfg;

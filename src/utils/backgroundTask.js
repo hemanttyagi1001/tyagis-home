@@ -1,7 +1,7 @@
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import {
-  addDefaultMilkEntryForDate, markDefaultAttendanceForDate, getDatabase, resetDatabase,
+  addDefaultMilkEntryForDate, markDefaultAttendanceForDate, getDatabase,
 } from '../database/database';
 import { getToday } from './dateUtils';
 
@@ -18,12 +18,13 @@ TaskManager.defineTask(BACKGROUND_TASK_NAME, async () => {
   } catch (error) {
     console.error('Background task error:', error);
     return BackgroundFetch.BackgroundFetchResult.Failed;
-  } finally {
-    // Release the handle we opened here. The OS may tear this connection down
-    // once the task returns, and a dead handle left in the module cache is
-    // exactly what made the app show blank data on the next foreground.
-    await resetDatabase();
   }
+  // Deliberately does not close the connection. This task shares the app's JS
+  // context, so when it runs while the app is open the handle it would close is
+  // the same one the visible screens are querying - which showed up as an
+  // intermittent "could not load records" banner. If the OS tears the
+  // connection down after this returns, withDatabase() reopens it on the next
+  // query anyway.
 });
 
 export async function registerBackgroundTask() {

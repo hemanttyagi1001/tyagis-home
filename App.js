@@ -7,7 +7,7 @@ import CrashReportPrompt from './src/components/CrashReportPrompt';
 import { installGlobalErrorHandler } from './src/utils/crashReporter';
 import { registerBackgroundTask } from './src/utils/backgroundTask';
 import {
-  getDatabase, resetDatabase, addDefaultMilkEntryForDate, markDefaultAttendanceForDate,
+  getDatabase, addDefaultMilkEntryForDate, markDefaultAttendanceForDate,
 } from './src/database/database';
 import { getToday } from './src/utils/dateUtils';
 
@@ -37,9 +37,15 @@ export default function App() {
 
     init();
 
-    // Android can close the native SQLite connection while the JS context stays
-    // alive. Reconnect on every foreground so the first query after resuming
-    // hits a live handle instead of returning empty results.
+    // On returning to the foreground, only re-seed today's defaults - the day
+    // may have rolled over while the app was backgrounded.
+    //
+    // This deliberately does NOT close and reopen the connection. Doing that
+    // tore down a perfectly good handle on every resume, and the screens reload
+    // on the same 'active' event with no ordering guarantee, so their queries
+    // could hit a connection mid-teardown and surface a retry banner. A stale
+    // handle is already handled where it matters: withDatabase() reopens and
+    // retries on demand.
     const subscription = AppState.addEventListener('change', async (nextState) => {
       const cameToForeground =
         appState.current.match(/inactive|background/) && nextState === 'active';
@@ -47,12 +53,9 @@ export default function App() {
       if (!cameToForeground) return;
 
       try {
-        await resetDatabase();
-        await getDatabase();
-        // The day may have rolled over while the app was backgrounded.
         await seedToday();
       } catch (error) {
-        console.error('Reconnect on foreground failed:', error);
+        console.error('Re-seeding on foreground failed:', error);
       }
     });
 

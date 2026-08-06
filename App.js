@@ -3,11 +3,17 @@ import { AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import AppNavigator from './src/navigation/AppNavigator';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import CrashReportPrompt from './src/components/CrashReportPrompt';
+import { installGlobalErrorHandler } from './src/utils/crashReporter';
 import { registerBackgroundTask } from './src/utils/backgroundTask';
 import {
   getDatabase, resetDatabase, addDefaultMilkEntryForDate, markDefaultAttendanceForDate,
 } from './src/database/database';
 import { getToday } from './src/utils/dateUtils';
+
+// Installed at module scope so uncaught errors are captured from the earliest
+// possible moment, including anything thrown during the first render.
+installGlobalErrorHandler();
 
 export default function App() {
   const appState = useRef(AppState.currentState);
@@ -57,6 +63,7 @@ export default function App() {
     <ErrorBoundary>
       <StatusBar style="light" />
       <AppNavigator />
+      <CrashReportPrompt />
     </ErrorBoundary>
   );
 }

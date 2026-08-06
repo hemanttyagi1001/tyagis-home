@@ -38,7 +38,8 @@
       "expo-sqlite",
       "expo-background-fetch",
       "expo-task-manager",
-      "expo-font"
+      "expo-font",
+      "expo-mail-composer"
     ],
     "extra": {
       "eas": {

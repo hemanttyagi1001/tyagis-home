@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
+import { saveCrashReport } from '../utils/crashReporter';
 
 // Catches render-time exceptions anywhere below it. Without this, a thrown
 // error unmounts the whole tree and leaves a blank white screen with no way
@@ -18,6 +19,9 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error('Render error caught by ErrorBoundary:', error, info?.componentStack);
+    // Persist it so the user can mail the details on the next launch. The app
+    // survives this error, so the report is offered next time rather than now.
+    saveCrashReport(error, { componentStack: info?.componentStack, isFatal: false });
   }
 
   handleRetry = () => {

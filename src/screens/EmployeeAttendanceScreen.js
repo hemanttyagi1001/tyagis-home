@@ -12,7 +12,7 @@ import {
 import {
   getCurrentMonth, getPreviousMonth, getNextMonth, getMonthName, isCurrentOrLastMonth
 } from '../utils/dateUtils';
-import { captureAndShare } from '../utils/shareUtils';
+import { captureAndShare, captureAndSaveToGallery } from '../utils/shareUtils';
 
 export default function EmployeeAttendanceScreen({ route }) {
   const { employee } = route.params;
@@ -110,9 +110,17 @@ export default function EmployeeAttendanceScreen({ route }) {
     );
   }
 
+  const exportName = `attendance_${employee.name}_${getMonthName(month)}_${year}`;
+
   async function handleShare() {
     if (calendarRef.current) {
-      await captureAndShare(calendarRef, `attendance_${employee.name}_${getMonthName(month)}_${year}`);
+      await captureAndShare(calendarRef, exportName);
+    }
+  }
+
+  async function handleSave() {
+    if (calendarRef.current) {
+      await captureAndSaveToGallery(calendarRef, exportName);
     }
   }
 
@@ -128,10 +136,16 @@ export default function EmployeeAttendanceScreen({ route }) {
     <View style={styles.container}>
       <View style={styles.topBar}>
         <Text style={styles.empName}>{employee.name}</Text>
-        <TouchableOpacity onPress={handleShare} style={styles.shareBtn}>
-          <Ionicons name="share-outline" size={22} color={COLORS.primary} />
-          <Text style={styles.shareBtnText}>Share</Text>
-        </TouchableOpacity>
+        <View style={styles.topBarRight}>
+          <TouchableOpacity onPress={handleSave} style={styles.shareBtn}>
+            <Ionicons name="download-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.shareBtnText}>Save</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleShare} style={styles.shareBtn}>
+            <Ionicons name="share-outline" size={22} color={COLORS.primary} />
+            <Text style={styles.shareBtnText}>Share</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loadError && (
@@ -274,6 +288,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
   },
   empName: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  topBarRight: { flexDirection: 'row', alignItems: 'center' },
   shareBtn: { flexDirection: 'row', alignItems: 'center', padding: 8, gap: 4 },
   shareBtnText: { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
   errorBanner: {

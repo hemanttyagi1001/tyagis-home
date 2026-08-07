@@ -1,9 +1,17 @@
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
-import { Alert } from 'react-native';
+import { Alert, Platform, ToastAndroid } from 'react-native';
 
-const ALBUM = "Tyagi's Home";
+// Brief, non-blocking confirmation. Saving is a background nicety - it does not
+// warrant a dialog the user has to dismiss.
+function toast(message) {
+  if (Platform.OS === 'android') {
+    ToastAndroid.show(message, ToastAndroid.SHORT);
+  } else {
+    Alert.alert('', message);
+  }
+}
 
 async function capture(viewRef, filename) {
   const ref = viewRef?.current ?? viewRef;
@@ -19,9 +27,41 @@ async function capture(viewRef, filename) {
   });
 }
 
+// Finds earlier exports of the same calendar so they can be replaced rather
+// than piling up. Android appends " (1)", " (2)" and so on when a filename is
+// taken, so anything starting with the base name is a previous save of this
+// same month.
+async function findPreviousExports(baseName) {
+  const matches = [];
+  let cursor;
+
+  // Only look at the most recent images; an export from months ago is not worth
+  // paging the entire library to find.
+  for (let page = 0; page < 3; page++) {
+    const { assets, endCursor, hasNextPage } = await MediaLibrary.getAssetsAsync({
+      mediaType: MediaLibrary.MediaType.photo,
+      sortBy: [MediaLibrary.SortBy.creationTime],
+      first: 100,
+      after: cursor,
+    });
+
+    for (const asset of assets) {
+      const name = asset.filename ?? '';
+      if (name === `${baseName}.png` || name.startsWith(`${baseName} (`) || name.startsWith(`${baseName}(`)) {
+        matches.push(asset);
+      }
+    }
+
+    if (!hasNextPage) break;
+    cursor = endCursor;
+  }
+
+  return matches;
+}
+
 // Saves the calendar straight to the photo gallery. Apps that accept a receipt
-// from their own picker - Splitwise among them - cannot take an image from the
-// share sheet, so the reliable route is to save it and attach it from there.
+// through their own picker - Splitwise among them - cannot take an image from
+// the share sheet, so the reliable route is to save it and attach it there.
 export async function captureAndSaveToGallery(viewRef, filename = 'calendar') {
   try {
     const permission = await MediaLibrary.requestPermissionsAsync();
@@ -39,27 +79,31 @@ export async function captureAndSaveToGallery(viewRef, filename = 'calendar') {
       return false;
     }
 
-    const asset = await MediaLibrary.createAssetAsync(uri);
-
-    // Group the exports in their own album so they are easy to find later.
-    // Album creation can fail on some devices/permission levels; the image is
-    // already in the gallery by then, so that is not worth failing the save.
+    // Remove earlier saves of this same calendar first, so re-saving a month
+    // replaces the image instead of leaving "name (1)", "name (2)" behind.
+    // The app created those assets, so deleting them does not prompt. Any
+    // failure here is not worth blocking the save - worst case a duplicate.
+    let replaced = false;
     try {
-      const album = await MediaLibrary.getAlbumAsync(ALBUM);
-      if (album) {
-        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-      } else {
-        await MediaLibrary.createAlbumAsync(ALBUM, asset, false);
+      const previous = await findPreviousExports(filename);
+      if (previous.length > 0) {
+        await MediaLibrary.deleteAssetsAsync(previous);
+        replaced = true;
       }
-    } catch (albumError) {
-      console.warn('Saved to gallery but could not add to album:', albumError);
+    } catch (deleteError) {
+      console.warn('Could not remove the previous export:', deleteError);
     }
 
-    Alert.alert('Saved', `The calendar is in your gallery under "${ALBUM}".`);
+    // Saved to the gallery's default location on purpose. Filing it into a
+    // named album moves the asset, and moving an asset makes Android ask
+    // "Allow this app to modify this photo?" every single time.
+    await MediaLibrary.createAssetAsync(uri);
+
+    toast(replaced ? 'Updated in gallery' : 'Saved to gallery');
     return true;
   } catch (error) {
     console.error('Error saving to gallery:', error);
-    Alert.alert('Save Failed', 'Could not save the image. Please try again.');
+    toast('Could not save the image');
     return false;
   }
 }

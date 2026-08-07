@@ -1,7 +1,36 @@
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Alert, Platform, ToastAndroid } from 'react-native';
+
+// Ids of the images this app has written to the gallery, keyed by export name.
+//
+// Kept here rather than discovered by scanning the media library, because
+// scanning needs READ_MEDIA_IMAGES - permission to read every photo on the
+// device. Google Play flags that for an app like this, and rightly so: writing
+// an image does not justify reading the user's whole camera roll. Remembering
+// what we created ourselves needs no read permission at all.
+const SAVED_INDEX = `${FileSystem.documentDirectory}saved-exports.json`;
+
+async function readSavedIndex() {
+  try {
+    const info = await FileSystem.getInfoAsync(SAVED_INDEX);
+    if (!info.exists) return {};
+    return JSON.parse(await FileSystem.readAsStringAsync(SAVED_INDEX));
+  } catch {
+    return {};
+  }
+}
+
+async function writeSavedIndex(index) {
+  try {
+    await FileSystem.writeAsStringAsync(SAVED_INDEX, JSON.stringify(index));
+  } catch (error) {
+    // Only costs us a duplicate on the next save.
+    console.warn('Could not record the saved image id:', error);
+  }
+}
 
 // Brief, non-blocking confirmation. Saving is a background nicety - it does not
 // warrant a dialog the user has to dismiss.
@@ -27,48 +56,18 @@ async function capture(viewRef, filename) {
   });
 }
 
-// Finds earlier exports of the same calendar so they can be replaced rather
-// than piling up. Android appends " (1)", " (2)" and so on when a filename is
-// taken, so anything starting with the base name is a previous save of this
-// same month.
-async function findPreviousExports(baseName) {
-  const matches = [];
-  let cursor;
-
-  // Only look at the most recent images; an export from months ago is not worth
-  // paging the entire library to find.
-  for (let page = 0; page < 3; page++) {
-    const { assets, endCursor, hasNextPage } = await MediaLibrary.getAssetsAsync({
-      mediaType: MediaLibrary.MediaType.photo,
-      sortBy: [MediaLibrary.SortBy.creationTime],
-      first: 100,
-      after: cursor,
-    });
-
-    for (const asset of assets) {
-      const name = asset.filename ?? '';
-      if (name === `${baseName}.png` || name.startsWith(`${baseName} (`) || name.startsWith(`${baseName}(`)) {
-        matches.push(asset);
-      }
-    }
-
-    if (!hasNextPage) break;
-    cursor = endCursor;
-  }
-
-  return matches;
-}
-
 // Saves the calendar straight to the photo gallery. Apps that accept a receipt
 // through their own picker - Splitwise among them - cannot take an image from
 // the share sheet, so the reliable route is to save it and attach it there.
 export async function captureAndSaveToGallery(viewRef, filename = 'calendar') {
   try {
-    const permission = await MediaLibrary.requestPermissionsAsync();
+    // writeOnly: this app adds images and removes the ones it added. It never
+    // reads the user's library, so it does not ask for permission to.
+    const permission = await MediaLibrary.requestPermissionsAsync(true);
     if (!permission.granted) {
       Alert.alert(
         'Permission needed',
-        'Allow photo access so the calendar can be saved to your gallery.'
+        'Allow Tyagi’s Home to save photos so the calendar can go to your gallery.'
       );
       return false;
     }
@@ -79,25 +78,30 @@ export async function captureAndSaveToGallery(viewRef, filename = 'calendar') {
       return false;
     }
 
-    // Remove earlier saves of this same calendar first, so re-saving a month
-    // replaces the image instead of leaving "name (1)", "name (2)" behind.
-    // The app created those assets, so deleting them does not prompt. Any
-    // failure here is not worth blocking the save - worst case a duplicate.
+    // Remove the previous save of this same month so re-saving replaces it
+    // instead of leaving "name (1)", "name (2)" behind. Only ids this app
+    // recorded are touched, so nothing of the user's is ever at risk. A failure
+    // here is not worth blocking the save - worst case is the duplicate.
+    const index = await readSavedIndex();
+    const previousId = index[filename];
     let replaced = false;
-    try {
-      const previous = await findPreviousExports(filename);
-      if (previous.length > 0) {
-        await MediaLibrary.deleteAssetsAsync(previous);
+
+    if (previousId) {
+      try {
+        await MediaLibrary.deleteAssetsAsync([previousId]);
         replaced = true;
+      } catch (deleteError) {
+        console.warn('Could not remove the previous export:', deleteError);
       }
-    } catch (deleteError) {
-      console.warn('Could not remove the previous export:', deleteError);
     }
 
     // Saved to the gallery's default location on purpose. Filing it into a
     // named album moves the asset, and moving an asset makes Android ask
     // "Allow this app to modify this photo?" every single time.
-    await MediaLibrary.createAssetAsync(uri);
+    const asset = await MediaLibrary.createAssetAsync(uri);
+
+    index[filename] = asset.id;
+    await writeSavedIndex(index);
 
     toast(replaced ? 'Updated in gallery' : 'Saved to gallery');
     return true;

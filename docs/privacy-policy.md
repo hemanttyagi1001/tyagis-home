@@ -7,7 +7,7 @@ title: Privacy Policy - Tyagi's Home
 **App:** Tyagi's Home (`com.tyagishome.app`)
 **Developer:** Hemant Kumar Tyagi
 **Contact:** hemanttyagi1001@gmail.com
-**Last updated:** 6 August 2026
+**Last updated:** 4 September 2026
 
 ## Summary
 
@@ -51,11 +51,6 @@ Those reports contain the error message and stack trace, the app version, your
 device model, and your Android version. They do not contain your milk,
 attendance, or employee records. Nothing is sent unless you tap send.
 
-## Notifications
-
-The app can show reminders on your device. These are generated locally by the
-app. No push notification service is used and no device token is transmitted.
-
 ## Permissions
 
 Android may list permissions that come from the app's underlying framework
@@ -65,7 +60,6 @@ rather than from features the app uses:
   requests of its own.
 - **Run at startup / prevent sleeping** — used to add each day's default entries
   automatically in the background.
-- **Notifications** — used for local reminders only.
 - **Storage** — used when you export a calendar image to share it.
 
 ## Children

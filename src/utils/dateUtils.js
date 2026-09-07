@@ -10,6 +10,24 @@ export function getToday() {
   return formatDate(new Date());
 }
 
+// Built from the parts rather than new Date('2026-09-07'), which the spec reads
+// as UTC midnight - west of Greenwich that lands on the previous day. Passing
+// day + n to the constructor rolls months and years over on its own.
+export function addDays(dateStr, days) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return formatDate(new Date(year, month - 1, day + days));
+}
+
+// Every date from start to end, inclusive. ISO strings sort chronologically, so
+// the bound is a plain string compare; start after end gives an empty list.
+export function datesInRange(start, end) {
+  const dates = [];
+  for (let date = start; date <= end; date = addDays(date, 1)) {
+    dates.push(date);
+  }
+  return dates;
+}
+
 export function getMonthDays(year, month) {
   return new Date(year, month, 0).getDate();
 }

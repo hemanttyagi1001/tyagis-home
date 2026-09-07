@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Image } from 'reac
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SHADOWS } from '../constants/theme';
-import { getDatabase, addDefaultMilkEntryForDate, markDefaultAttendanceForDate } from '../database/database';
+import { getDatabase, seedDefaultsThrough } from '../database/database';
 import { getToday } from '../utils/dateUtils';
 
 export default function HomeScreen({ navigation }) {
@@ -16,9 +16,7 @@ export default function HomeScreen({ navigation }) {
   async function initializeToday() {
     try {
       await getDatabase();
-      const today = getToday();
-      await addDefaultMilkEntryForDate(today);
-      await markDefaultAttendanceForDate(today);
+      await seedDefaultsThrough(getToday());
     } catch (error) {
       // Seeding today's defaults is best-effort - the calendar screens still
       // render, and getDatabase() retries the connection on their next query.

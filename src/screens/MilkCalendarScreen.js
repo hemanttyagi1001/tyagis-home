@@ -152,10 +152,24 @@ export default function MilkCalendarScreen() {
   const totalCowAmount = entryList.reduce((s, e) => s + (e.cow_litres || 0) * (e.cow_price_per_litre || 0), 0);
 
   function renderMilkCell(dateStr, dayData) {
+    // No row at all - nothing was ever recorded for this day.
     if (!dayData) return null;
+
     const bLtr = dayData.buffalo_litres || 0;
     const cLtr = dayData.cow_litres || 0;
-    if (bLtr === 0 && cLtr === 0) return null;
+
+    // A day saved as zero means milk did not come, which is a real record and
+    // has to look different from a day with no record. Both used to render as
+    // an empty cell, so "no delivery" was indistinguishable from "not filled
+    // in yet" - and there was no way to tell from the calendar which it was.
+    if (bLtr === 0 && cLtr === 0) {
+      return (
+        <View style={styles.cellContent}>
+          <Text style={styles.cellNone}>0</Text>
+        </View>
+      );
+    }
+
     return (
       <View style={styles.cellContent}>
         {bLtr > 0 && <Text style={styles.cellBuffalo}>B:{bLtr}</Text>}
@@ -378,6 +392,9 @@ const styles = StyleSheet.create({
   cellContent: { alignItems: 'center', marginTop: 1 },
   cellBuffalo: { fontSize: 8, color: '#1565C0', fontWeight: '600' },
   cellCow: { fontSize: 8, color: '#E65100', fontWeight: '600' },
+  // Muted next to the litre figures: it marks a day as accounted for without
+  // competing with the days that actually carry a quantity.
+  cellNone: { fontSize: 8, color: COLORS.textLight, fontWeight: '600' },
   summary: {
     margin: 12,
     padding: 12,

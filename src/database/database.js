@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { addDays, datesInRange } from '../utils/dateUtils';
 
 const DB_NAME = 'tyagis_home.db';
 
@@ -142,6 +143,12 @@ async function initializeDatabase(database) {
       FOREIGN KEY (employee_id) REFERENCES employees(id),
       UNIQUE(employee_id, date)
     );
+
+    CREATE TABLE IF NOT EXISTS app_state (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
   `);
 
   // Insert default milk settings if not exists
@@ -152,6 +159,14 @@ async function initializeDatabase(database) {
       [0, 0, 0, 0]
     );
   }
+}
+
+// ---- App state ----
+async function getAppState(key) {
+  const row = await withDatabase((database) =>
+    database.getFirstAsync('SELECT value FROM app_state WHERE key = ?', [key])
+  );
+  return row?.value ?? null;
 }
 
 // ---- Milk Defaults ----
@@ -181,6 +196,16 @@ export async function getMilkEntry(date) {
   );
 }
 
+// The most recent day with a milk record, or null if there are none. Milk is
+// seeded for every day regardless of how many employees exist, so it is the
+// dependable marker of how far seeding previously reached.
+async function getLatestMilkEntryDate() {
+  const row = await withDatabase((database) =>
+    database.getFirstAsync('SELECT MAX(date) AS date FROM milk_entries')
+  );
+  return row?.date ?? null;
+}
+
 export async function getMilkEntriesForMonth(year, month) {
   const monthStr = String(month).padStart(2, '0');
   const pattern = `${year}-${monthStr}-%`;
@@ -201,22 +226,6 @@ export async function upsertMilkEntry(date, buffaloLitres, buffaloPrice, cowLitr
          cow_price_per_litre = excluded.cow_price_per_litre,
          updated_at = datetime('now', 'localtime')`,
       [date, buffaloLitres, buffaloPrice, cowLitres, cowPrice]
-    )
-  );
-}
-
-export async function addDefaultMilkEntryForDate(date) {
-  const existing = await getMilkEntry(date);
-  if (existing) return; // Already exists
-
-  const defaults = await getMilkDefaults();
-  if (!defaults) return;
-
-  await withDatabase((database) =>
-    database.runAsync(
-      `INSERT OR IGNORE INTO milk_entries (date, buffalo_litres, buffalo_price_per_litre, cow_litres, cow_price_per_litre)
-       VALUES (?, ?, ?, ?, ?)`,
-      [date, defaults.buffalo_litres, defaults.buffalo_price_per_litre, defaults.cow_litres, defaults.cow_price_per_litre]
     )
   );
 }
@@ -281,18 +290,88 @@ export async function upsertAttendance(employeeId, date, status) {
   );
 }
 
-export async function markDefaultAttendanceForDate(date) {
+// ---- Daily defaults ----
+
+// A day's default entries can only be written while the app is running, and the
+// app routinely goes days without being opened - the phone switched off, or
+// Android throttling background work for an app that has not been touched.
+// Seeding getToday() alone left every one of those days empty for good, because
+// nothing ever looked further back than the current date. Each run now closes
+// the whole gap since the last day it seeded.
+//
+// The bound stops a long absence from silently manufacturing months of records.
+// A gap that wide is better filled in deliberately than guessed at.
+const MAX_BACKFILL_DAYS = 31;
+const LAST_SEEDED_KEY = 'last_seeded_date';
+
+export async function seedDefaultsThrough(today) {
+  // The marker only exists from this version onwards. On the first run after
+  // updating there is none, and treating that as a fresh install would skip
+  // exactly the days the update is meant to recover - so fall back to the last
+  // day that actually has a record. An install with no records at all is
+  // genuinely new and correctly yields null.
+  const lastSeeded = (await getAppState(LAST_SEEDED_KEY)) ?? (await getLatestMilkEntryDate());
+
+  // Nothing recorded ever: start at today rather than backdating a month of
+  // entries the user never had.
+  let start = lastSeeded ? addDays(lastSeeded, 1) : today;
+
+  const earliest = addDays(today, -(MAX_BACKFILL_DAYS - 1));
+  if (start < earliest) start = earliest;
+
+  // Today is seeded on every run, including when it has been seeded already.
+  // The inserts skip rows that exist, so the only work this repeats is for an
+  // employee added since the last run - who would otherwise have no entry until
+  // tomorrow.
+  if (start > today) start = today;
+
+  const dates = datesInRange(start, today);
+
+  // Read before opening the transaction: both of these go through
+  // withDatabase(), and its reconnect-and-retry cannot rerun statements already
+  // committed inside a transaction it is nested in.
+  const defaults = await getMilkDefaults();
   const employees = await getEmployees(true);
-  if (employees.length === 0) return;
 
   await withDatabase(async (database) => {
-    for (const emp of employees) {
+    // One transaction for the whole range. A separate write per row took the
+    // write lock once per insert, and WAL allows a single writer - that is what
+    // made seeding collide with the background task and the screens' queries.
+    await database.withTransactionAsync(async () => {
+      for (const date of dates) {
+        if (defaults) {
+          // Backfilled days necessarily use the defaults as they stand now; the
+          // values in force on the missed day were never recorded anywhere.
+          await database.runAsync(
+            `INSERT OR IGNORE INTO milk_entries
+               (date, buffalo_litres, buffalo_price_per_litre, cow_litres, cow_price_per_litre)
+             VALUES (?, ?, ?, ?, ?)`,
+            [date, defaults.buffalo_litres, defaults.buffalo_price_per_litre,
+              defaults.cow_litres, defaults.cow_price_per_litre]
+          );
+        }
+
+        for (const employee of employees) {
+          await database.runAsync(
+            `INSERT OR IGNORE INTO attendance (employee_id, date, status) VALUES (?, ?, 'full_day')`,
+            [employee.id, date]
+          );
+        }
+      }
+
+      // Inside the transaction, so a failure rolls the marker back with the
+      // rows and the next run retries the same range rather than skipping it.
       await database.runAsync(
-        `INSERT OR IGNORE INTO attendance (employee_id, date, status) VALUES (?, ?, 'full_day')`,
-        [emp.id, date]
+        `INSERT INTO app_state (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           value = excluded.value,
+           updated_at = datetime('now', 'localtime')`,
+        [LAST_SEEDED_KEY, today]
       );
-    }
+    });
   });
+
+  return dates;
 }
 
 export async function getAttendanceSummary(employeeId, year, month) {

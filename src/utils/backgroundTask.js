@@ -1,8 +1,6 @@
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
-import {
-  addDefaultMilkEntryForDate, markDefaultAttendanceForDate, getDatabase,
-} from '../database/database';
+import { getDatabase, seedDefaultsThrough } from '../database/database';
 import { getToday } from './dateUtils';
 
 const BACKGROUND_TASK_NAME = 'DAILY_AUTO_ENTRY';
@@ -10,10 +8,8 @@ const BACKGROUND_TASK_NAME = 'DAILY_AUTO_ENTRY';
 TaskManager.defineTask(BACKGROUND_TASK_NAME, async () => {
   try {
     await getDatabase();
-    const today = getToday();
-    await addDefaultMilkEntryForDate(today);
-    await markDefaultAttendanceForDate(today);
-    console.log('Background task: Added default entries for', today);
+    const dates = await seedDefaultsThrough(getToday());
+    console.log('Background task: seeded defaults for', dates.join(', '));
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch (error) {
     console.error('Background task error:', error);
@@ -38,7 +34,13 @@ export async function registerBackgroundTask() {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_TASK_NAME);
     if (!isRegistered) {
       await BackgroundFetch.registerTaskAsync(BACKGROUND_TASK_NAME, {
-        minimumInterval: 60 * 60, // 1 hour - OS will schedule around 2 AM
+        // A floor, not a schedule: the earliest the OS may run the task, never
+        // a time of day. Android batches these through WorkManager around Doze
+        // maintenance windows, and demotes an app the user has not opened into
+        // a standby bucket where they barely run at all - which is exactly the
+        // case that leaves days unseeded. Treated as a bonus; seedDefaultsThrough()
+        // closes the gap whenever the app is next opened either way.
+        minimumInterval: 60 * 60,
         stopOnTerminate: false,
         startOnBoot: true,
       });

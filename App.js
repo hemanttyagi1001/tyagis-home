@@ -6,9 +6,7 @@ import ErrorBoundary from './src/components/ErrorBoundary';
 import CrashReportPrompt from './src/components/CrashReportPrompt';
 import { installGlobalErrorHandler } from './src/utils/crashReporter';
 import { registerBackgroundTask } from './src/utils/backgroundTask';
-import {
-  getDatabase, addDefaultMilkEntryForDate, markDefaultAttendanceForDate,
-} from './src/database/database';
+import { getDatabase, seedDefaultsThrough } from './src/database/database';
 import { getToday } from './src/utils/dateUtils';
 
 // Installed at module scope so uncaught errors are captured from the earliest
@@ -20,9 +18,7 @@ export default function App() {
 
   useEffect(() => {
     async function seedToday() {
-      const today = getToday();
-      await addDefaultMilkEntryForDate(today);
-      await markDefaultAttendanceForDate(today);
+      await seedDefaultsThrough(getToday());
     }
 
     async function init() {
@@ -37,8 +33,8 @@ export default function App() {
 
     init();
 
-    // On returning to the foreground, only re-seed today's defaults - the day
-    // may have rolled over while the app was backgrounded.
+    // On returning to the foreground, close any gap in the defaults - the app
+    // may have sat in the background across one midnight or several.
     //
     // This deliberately does NOT close and reopen the connection. Doing that
     // tore down a perfectly good handle on every resume, and the screens reload

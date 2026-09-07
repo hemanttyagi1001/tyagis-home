@@ -24,7 +24,6 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.tyagishome.app",
-      "versionCode": 7,
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.WAKE_LOCK"

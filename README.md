@@ -40,7 +40,13 @@ npx expo start
 
 Then open the project in **Expo Go** on your phone — scan the QR code, or enter
 the `exp://<your-lan-ip>:8081` URL manually. The phone and computer must be on
-the same network.
+the same network, or add `--tunnel` if they are not.
+
+Expo Go is the entire development loop; nothing needs to be built to run the app
+locally. It does run your JS inside its own container, though, so app lifecycle
+behaviour (backgrounding, process death, the daily background task) differs from
+a standalone build — check anything lifecycle-sensitive against a release APK
+from `npm run build:apk`.
 
 ## Project layout
 
@@ -76,24 +82,36 @@ Theme colors: `#4A6741` (sage green), `#D4A843` (gold).
 
 ## Building
 
-```bash
-# APK for direct install / testing
-npx eas-cli build --platform android --profile preview
+Builds run on your own machine — no EAS, no cloud queue. Needs a JDK, the
+Android SDK, and the release keystore configured in
+`android/keystore.properties`.
 
-# AAB for Play Store submission
-npx eas-cli build --platform android --profile production
+```bash
+# AAB for Play Store upload
+npm run build:aab
+
+# APK for direct install / testing on a device
+npm run build:apk
 ```
 
-## CI/CD
+Both run `expo prebuild` first, then Gradle. The AAB lands at
+`android/app/build/outputs/bundle/release/app-release.aab` and is uploaded to
+the Play Console by hand.
 
-Day-to-day testing is local, against Expo Go. CI handles releases:
+Bump `expo.android.versionCode` in `app.json` before every upload — nothing
+increments it automatically, and Play rejects a code it has already seen.
+
+Full prerequisites, signing details and the release checklist:
+[docs/build-and-release.md](docs/build-and-release.md).
+
+## CI
+
+CI only verifies; it never builds a release.
 
 | Event | Result |
 |---|---|
-| Pull request | Verify only — install, config check, Android bundle |
-| Merge to `main` | Production AAB, submitted to the Play Store internal track as a draft |
-| Manual dispatch | Choose the profile, and whether to submit |
+| Pull request, push to `main` | Install, Expo config check, Android Metro bundle (~2 min) |
 
-Setup (the `EXPO_TOKEN` and `GOOGLE_SERVICE_ACCOUNT_KEY` secrets, and the
-one-time manual first upload Google requires) is documented in
-[docs/ci-setup.md](docs/ci-setup.md).
+That catches code that will not bundle before you spend eight minutes on a
+local Gradle run. Releasing is a local, manual step by design — the signing
+keystore never leaves your machine.

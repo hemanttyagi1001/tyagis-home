@@ -1,0 +1,58 @@
+name: Verify
+
+# Releases are built on a local machine (see docs/build-and-release.md), so CI
+# does not build or submit anything. Its only job is to catch code that will not
+# bundle, before you spend eight minutes on a local Gradle run.
+#
+#   pull request / push to main  ->  install, config check, Metro bundle  (~2 min)
+#   release                      ->  local `npm run build:aab`, manual Play upload
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/CODEOWNERS'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/CODEOWNERS'
+      - 'docs/**'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  EXPO_NO_TELEMETRY: 1
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Expo config
+        # Also proves the config plugins in plugins/ still resolve, since a
+        # broken one fails the local prebuild that precedes every release build.
+        run: npx expo config --type public --json > /dev/null
+
+      - name: Bundle for Android
+        # Exercises every source file through Metro, so a syntax error or bad
+        # import fails here rather than part-way through a local release build.
+        run: |
+          npx expo export --platform android --output-dir /tmp/expo-export
+          echo "Bundle produced:"
+          du -sh /tmp/expo-export

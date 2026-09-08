@@ -6,7 +6,10 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "prebuild": "expo prebuild --platform android",
+    "build:aab": "npm run prebuild && cd android && gradlew bundleRelease",
+    "build:apk": "npm run prebuild && cd android && gradlew assembleRelease"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

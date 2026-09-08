@@ -18,8 +18,13 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Release artifacts from a local Gradle build
+*.aab
+*.apk
+
 # Google Play service account key - NEVER commit this.
-# In CI it is written at runtime from the GOOGLE_SERVICE_ACCOUNT_KEY secret.
+# No longer used (uploads to Play are manual), but kept so a stray key file
+# cannot be committed by accident.
 google-service-account.json
 *-service-account*.json
 play-store-key*.json
